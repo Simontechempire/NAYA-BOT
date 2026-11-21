@@ -1,0 +1,21 @@
+{
+  "name": "naya-bot",
+  "version": "1.0.0",
+  "description": "NAYA BOT - FACELESS TECH WhatsApp Multi-Device Bot",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "latest",
+    "axios": "latest",
+    "dotenv": "latest",
+    "express": "latest",
+    "groq-sdk": "latest",
+    "node-telegram-bot-api": "latest",
+    "pino": "latest"
+  }
+}
