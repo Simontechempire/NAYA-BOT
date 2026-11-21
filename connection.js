@@ -1,4 +1,3 @@
-
 const fs = require('fs');
 const path = require('path');
 
@@ -7,7 +6,8 @@ const db = require('./lib/database');
 
 const {
   startSession,
-  activeSessions
+  activeSessions,
+  setSessionCreatedHandler
 } = require('./lib/session');
 
 const {
@@ -25,7 +25,6 @@ function attachSessionHandler(session) {
 
   const sock = session.sock;
 
-  // Prevent duplicate message listeners.
   if (attachedSockets.has(sock)) return;
   attachedSockets.add(sock);
 
@@ -46,6 +45,10 @@ function attachSessionHandler(session) {
 
   console.log(`[CONNECTION] Handler attached: ${session.id}`);
 }
+
+// Automatically attach handlers to every new socket,
+// including sockets created during reconnection.
+setSessionCreatedHandler(attachSessionHandler);
 
 async function initializeConnections() {
   if (initialized) return;
@@ -80,12 +83,10 @@ async function initializeConnections() {
     const saved = whatsappUsers[sessionId] || {};
 
     try {
-      const session = await startSession(sessionId, {
+      await startSession(sessionId, {
         number: saved.number || '',
         ownerId: saved.ownerId || null
       });
-
-      attachSessionHandler(session);
 
       console.log(`[CONNECTION] Restoring: ${sessionId}`);
     } catch (error) {
@@ -108,4 +109,4 @@ module.exports = {
   getActiveConnections,
   attachSessionHandler
 };
-    
+  
