@@ -1,3 +1,4 @@
+
 const fs = require('fs');
 const path = require('path');
 
@@ -17,6 +18,34 @@ const {
 const { getUsers } = db;
 
 let initialized = false;
+const attachedSockets = new WeakSet();
+
+function attachSessionHandler(session) {
+  if (!session || !session.sock) return;
+
+  const sock = session.sock;
+
+  // Prevent duplicate message listeners.
+  if (attachedSockets.has(sock)) return;
+  attachedSockets.add(sock);
+
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    if (type !== 'notify') return;
+
+    for (const message of messages || []) {
+      try {
+        await handleMessage(sock, message, session);
+      } catch (error) {
+        console.error(
+          `[HANDLER] Message error (${session.id}):`,
+          error.message
+        );
+      }
+    }
+  });
+
+  console.log(`[CONNECTION] Handler attached: ${session.id}`);
+}
 
 async function initializeConnections() {
   if (initialized) return;
@@ -29,7 +58,6 @@ async function initializeConnections() {
 
   fs.mkdirSync(config.SESSION_DIR, { recursive: true });
 
-  // Load every plugin category automatically.
   loadPlugins();
 
   const users = getUsers();
@@ -37,10 +65,15 @@ async function initializeConnections() {
 
   const sessionIds = new Set([
     ...Object.keys(whatsappUsers),
-    ...fs.readdirSync(config.SESSION_DIR)
-      .filter(name =>
-        fs.statSync(path.join(config.SESSION_DIR, name)).isDirectory()
-      )
+    ...fs.readdirSync(config.SESSION_DIR).filter(name => {
+      const fullPath = path.join(config.SESSION_DIR, name);
+
+      try {
+        return fs.statSync(fullPath).isDirectory();
+      } catch {
+        return false;
+      }
+    })
   ]);
 
   for (const sessionId of sessionIds) {
@@ -52,19 +85,12 @@ async function initializeConnections() {
         ownerId: saved.ownerId || null
       });
 
-      // Attach the handler to this individual WhatsApp session.
-      session.sock.ev.on('messages.upsert', async ({ messages, type }) => {
-        if (type !== 'notify') return;
+      attachSessionHandler(session);
 
-        for (const message of messages || []) {
-          await handleMessage(session.sock, message, session);
-        }
-      });
-
-      console.log(`[CONNECTION] Restoring session: ${sessionId}`);
+      console.log(`[CONNECTION] Restoring: ${sessionId}`);
     } catch (error) {
       console.error(
-        `[CONNECTION] Failed to restore ${sessionId}:`,
+        `[CONNECTION] Failed (${sessionId}):`,
         error.message
       );
     }
@@ -79,5 +105,7 @@ function getActiveConnections() {
 
 module.exports = {
   initializeConnections,
-  getActiveConnections
+  getActiveConnections,
+  attachSessionHandler
 };
+    
