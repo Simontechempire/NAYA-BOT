@@ -1,4 +1,5 @@
 require('dotenv').config();
+const path = require('path');
 
 module.exports = {
   BOT_NAME: process.env.BOT_NAME || 'NAYA BOT',
@@ -10,9 +11,9 @@ module.exports = {
 
   OWNER_NUMBER: process.env.OWNER_NUMBER || '',
 
-  SESSION_DIR: './sessions',
-  DATABASE: './database/data.json',
-  USERS_DATABASE: './database/users.json',
+  SESSION_DIR: path.join(__dirname, 'sessions'),
+  DATABASE: path.join(__dirname, 'database', 'data.json'),
+  USERS_DATABASE: path.join(__dirname, 'database', 'users.json'),
 
   MODE: 'public',
   MULTI_DEVICE: true,
