@@ -1,3 +1,4 @@
+
 require('dotenv').config();
 
 const express = require('express');
@@ -8,8 +9,14 @@ const config = require('./config');
 const db = require('./lib/database');
 
 const {
-  initializeConnections
+  initializeConnections,
+  getActiveConnections,
+  attachSessionHandler
 } = require('./connection');
+
+const {
+  getSession
+} = require('./lib/session');
 
 const {
   startTelegram
@@ -21,30 +28,35 @@ const {
 
 const app = express();
 
+app.set('trust proxy', 1);
+
 app.use(express.json({ limit: '20kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-const rateLimits = new Map();
+const ipLimits = new Map();
+const numberLimits = new Map();
 
-function rateLimit(req, res, next) {
-  const ip = req.ip;
+function checkLimit(store, key, max, duration) {
   const now = Date.now();
+  let record = store.get(key);
 
-  const previous = rateLimits.get(ip) || {
-    count: 0,
-    reset: now + 60000
-  };
-
-  if (now > previous.reset) {
-    previous.count = 0;
-    previous.reset = now + 60000;
+  if (!record || now > record.reset) {
+    record = {
+      count: 0,
+      reset: now + duration
+    };
   }
 
-  previous.count++;
+  record.count++;
+  store.set(key, record);
 
-  rateLimits.set(ip, previous);
+  return record.count <= max;
+}
 
-  if (previous.count > 5) {
+function rateLimit(req, res, next) {
+  const ip = req.ip || 'unknown';
+
+  if (!checkLimit(ipLimits, ip, 5, 60000)) {
     return res.status(429).json({
       success: false,
       message: 'Too many requests. Try again later.'
@@ -53,6 +65,17 @@ function rateLimit(req, res, next) {
 
   next();
 }
+
+// Remove expired rate-limit records periodically.
+setInterval(() => {
+  const now = Date.now();
+
+  for (const store of [ipLimits, numberLimits]) {
+    for (const [key, value] of store) {
+      if (now > value.reset) store.delete(key);
+    }
+  }
+}, 60000).unref();
 
 app.get('/api/health', (req, res) => {
   res.json({
@@ -66,19 +89,34 @@ app.get('/api/health', (req, res) => {
 
 app.post('/api/pair', rateLimit, async (req, res) => {
   try {
-    const number = String(req.body.number || '')
+    const number = String(req.body?.number || '')
       .replace(/\D/g, '');
 
-    if (number.length < 10 || number.length > 15) {
+    if (!/^\d{10,15}$/.test(number)) {
       return res.status(400).json({
         success: false,
         message: 'Enter a valid phone number with country code.'
       });
     }
 
+    // Prevent repeated pairing requests for the same number.
+    if (!checkLimit(numberLimits, number, 3, 10 * 60 * 1000)) {
+      return res.status(429).json({
+        success: false,
+        message: 'Too many pairing requests for this number. Try again later.'
+      });
+    }
+
     const result = await pairNumber(number, null);
 
-    res.json({
+    // Attach command handling to newly paired sessions.
+    const session = getSession(result.sessionId);
+
+    if (session) {
+      attachSessionHandler(session);
+    }
+
+    return res.json({
       success: true,
       message: 'Pairing code generated.',
       code: result.code,
@@ -88,28 +126,30 @@ app.post('/api/pair', rateLimit, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('[PAIR API]', error);
+    console.error('[PAIR API]', error.message);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message: error.message || 'Pairing failed.'
+      message: 'Pairing failed. Please try again later.'
     });
   }
 });
 
 app.get('/api/status', (req, res) => {
-  const users = db.getUsers();
-  const sessions = users.whatsapp || {};
+  const active = getActiveConnections();
 
   res.json({
     success: true,
     bot: config.BOT_NAME,
-    sessions: Object.keys(sessions).length
+    totalActive: active.length,
+    connected: active.filter(s => s.status === 'connected').length,
+    connecting: active.filter(s => s.status === 'connecting').length,
+    time: new Date().toISOString()
   });
 });
 
 app.use((error, req, res, next) => {
-  console.error('[SERVER ERROR]', error);
+  console.error('[SERVER ERROR]', error.message);
 
   res.status(500).json({
     success: false,
@@ -128,7 +168,11 @@ async function start() {
     startTelegram();
 
     app.listen(config.PORT, '0.0.0.0', () => {
-      console.log(`NAYA BOT dashboard running on port ${config.PORT}`);
+      console.log('╭━━━━━━━━━━━━━━━━━━━━━━━━━━╮');
+      console.log('┃       NAYA BOT           ┃');
+      console.log('┃     FACELESS TECH        ┃');
+      console.log('╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯');
+      console.log(`[SERVER] Running on port ${config.PORT}`);
     });
 
   } catch (error) {
