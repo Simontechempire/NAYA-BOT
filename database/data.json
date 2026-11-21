@@ -1,0 +1,19 @@
+{
+  "users": {},
+  "sessions": {},
+  "settings": {
+    "mode": "public",
+    "prefix": ".",
+    "botName": "NAYA BOT",
+    "developer": "FACELESS TECH",
+    "autoReconnect": true,
+    "welcome": true,
+    "goodbye": true,
+    "antiLink": false,
+    "antiSpam": false,
+    "chatbot": false
+  },
+  "banned": [],
+  "warnings": {},
+  "createdAt": null
+}
