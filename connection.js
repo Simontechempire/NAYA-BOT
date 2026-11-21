@@ -25,6 +25,7 @@ function attachSessionHandler(session) {
 
   const sock = session.sock;
 
+  // SIMON FIX - Prevent double attach = attach -> disconnect loop
   if (attachedSockets.has(sock)) return;
   attachedSockets.add(sock);
 
@@ -83,6 +84,7 @@ async function initializeConnections() {
     const saved = whatsappUsers[sessionId] || {};
 
     try {
+      // ZENITH FIX - Start session, if e fail, e go retry inside session.js, no crash all
       await startSession(sessionId, {
         number: saved.number || '',
         ownerId: saved.ownerId || null
@@ -109,4 +111,3 @@ module.exports = {
   getActiveConnections,
   attachSessionHandler
 };
-  
