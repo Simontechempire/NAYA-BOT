@@ -78,6 +78,34 @@ app.post('/api/pair', rateLimit, async (req, res) => {
   }
 });
 
+// SIMON COMPAT - GET /getcode?number=234... - for old links / direct browser
+app.get('/getcode', rateLimit, async (req, res) => {
+  try {
+    const number = String(req.query.number || req.query.phone || '').replace(/\D/g, '');
+    if (!/^\d{10,15}$/.test(number)) {
+      return res.status(400).json({ success: false, message: 'Add ?number=2348012345678' });
+    }
+    if (!checkLimit(numberLimits, number, 3, 10 * 60 * 1000)) {
+      return res.status(429).json({ success: false, message: 'Too many pairing requests for this number. Try again later.' });
+    }
+    if (!config.PAIRING_ENABLED) {
+      return res.status(403).json({ success: false, message: 'Pairing is disabled.' });
+    }
+    const result = await pairNumber(number, null);
+    const session = getSession(result.sessionId);
+    if (session) attachSessionHandler(session);
+    return res.json({
+      success: true, message: 'Pairing code generated.',
+      code: result.code, number: result.number,
+      sessionId: result.sessionId, expiresIn: result.expiresIn,
+      codeFormatted: result.code ? result.code.match(/.{1,4}/g)?.join("-") : null
+    });
+  } catch (error) {
+    console.error('[GETCODE API]', error.message);
+    return res.status(500).json({ success: false, message: error.message || 'Pairing failed. Please try again later.' });
+  }
+});
+
 app.get('/api/status', (req, res) => {
   const active = getActiveConnections();
   res.json({
